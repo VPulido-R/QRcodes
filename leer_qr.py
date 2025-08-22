@@ -1,37 +1,43 @@
+import os
+from datetime import datetime
 import cv2
 from pyzbar.pyzbar import decode
+from picamera2 import Picamera2
 
-# Abre la cámara (0 = cámara principal)
-cap = cv2.VideoCapture(0)
+# Carpeta donde se guardan las fotos
+OUTPUT_DIR = "scans"
+os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-print("📷 Escaneando QR... Presiona 'q' para salir.")
+# Inicializa la cámara
+picam2 = Picamera2()
+picam2.start()
 
-while True:
-    ret, frame = cap.read()
-    if not ret:
-        print("❌ Error al acceder a la cámara")
-        break
+print("📷 Escaneando QR... presiona Ctrl+C para salir.")
 
-    # Detectar códigos en el frame
-    for codigo in decode(frame):
-        data = codigo.data.decode('utf-8')   # Extraer contenido
-        x, y, w, h = codigo.rect             # Coordenadas del QR
+try:
+    while True:
+        # Captura frame
+        frame = picam2.capture_array()
 
-        # Dibujar rectángulo alrededor del QR
-        cv2.rectangle(frame, (x, y), (x+w, y+h), (0, 255, 0), 3)
+        # Detecta QR en el frame
+        for qr in decode(frame):
+            qr_data = qr.data.decode("utf-8")
+            # Dibujar rectángulo en QR
+            pts = qr.polygon
+            if len(pts) == 4:
+                pts = [(p.x, p.y) for p in pts]
+                cv2.polylines(frame, [cv2.convexHull(cv2.UMat(np.array(pts), cv2.CV_32S))], True, (0,255,0), 2)
 
-        # Mostrar texto decodificado
-        cv2.putText(frame, data, (x, y-10),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.9, (255, 0, 0), 2)
+            # Guardar imagen con timestamp
+            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"{OUTPUT_DIR}/scan_{ts}.jpg"
+            cv2.imwrite(filename, frame)
 
-        print("✅ QR detectado:", data)
+            # Mostrar resultado
+            print(f"✅ QR detectado: {qr_data} - Guardado en {filename}")
 
-    # Mostrar cámara en ventana
-    cv2.imshow("Lector QR", frame)
+except KeyboardInterrupt:
+    print("✋ Escaneo terminado.")
 
-    # Salir con la tecla q
-    if cv2.waitKey(1) & 0xFF == ord('q'):
-        break
-
-cap.release()
-cv2.destroyAllWindows()
+finally:
+    picam2.close()
